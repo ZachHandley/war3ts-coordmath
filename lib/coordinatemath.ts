@@ -1,68 +1,69 @@
-import { Unit, Timer, Trigger, addScriptHook, Effect, File, Point, MapPlayer, Force, Rectangle } from "w3ts";
-import { Players } from "w3ts/globals";
-import { EventQueue, TimedEventQueue } from "wc3ts-eventqueue";
-import { isNull } from "util";
+import { Point, Rectangle } from "w3ts";
 
-const initTrigger: Trigger = new Trigger();
-const chatTrigger: Trigger = new Trigger();
-const buildClaim: boolean = true;                                //Building in a base claims it if nobody else is there
-const claimBuildings: Number[] = [];                        //Building ID's that "claim" a base, if not-empty will make buildClaim false and only look for those buildings
-const debugMode: boolean = true;                                 //Whether or not you expect to be naming and making new bases, turn off for release
-const fileName: String = "coordinatemath_bases.txt"              //File to save bases to, just saves some data to a file
-const fileLimit: Number = 259;                                   //Character limit for writing to a file
-const buildEffectString: String = "";                            //String for the buildEffectString
-const buildEffectCornerString: String = "";                      //Overly long name but this is the effect for each corner of the polygon
-const baseNames: String[] = ["Peppers", "Unicorn"];              //Base names to be used in order of declaration, you can also set a base to have a certain name by clicking on it with a command
-                                                                 //if not set will default to numbers
-let polygonArray: Map<String, Point> = new Map();                //polygonArray is an array of all of the points we need to keep track of
+const debugMode: boolean = false;                                 //Whether or not you expect to be naming and making new bases, turn off for release
+const circleVertices: number = 30;
 
-function sendMessageToPlayer(toPlayer: MapPlayer, localPlayer: MapPlayer, msg: any) {
-    // tslint:disable-next-line:cannot-find-name
-    if(toPlayer == localPlayer) {
-        let tempForce: Force = new Force();
-        tempForce.addPlayer(toPlayer);
-        DisplayTimedTextToForce(tempForce, 10, `${msg}`);
-        tempForce.destroy();
-    }
-}
+export class Polygon {
+    public static polygonArray: Polygon[] = [];
+    public name: string = "";
+    index: number;
 
-class Polygon {
-    entrances: Point[] = [];                                     //The entrances to the base to try to better detect if a unit enters the base
-    buildEffects: Map<Effect, Point> = new Map();                //Effects used between mouse points as a new base is being made
-    buildEffectsCorner: Map<Effect, Point> = new Map();          //Corner Effects (polygon corners for visibility) to display a base or display corners while being built
-    polyTrigger: Trigger;                                        //Trigger to register mouse events and chat events for making a base, destroyed later
-
-
-    constructor(public points: Point[], public trigPlayer: MapPlayer | null) {
-        if(!points.length) { //if no points it must be new right?
-            if(trigPlayer !== null) { //Check if there was a player that triggered it
-                this.setupNewPolygon(); //Start new polygon setup
-                return;
-            } else {
-                return;
-            }
-        } else if(points.length) {
-            this.setupPolygon();
-            return;
-        }
+    constructor(public points: Point[]) {
+        this.index = Polygon.polygonArray.length;
+        Polygon.polygonArray[this.index] = this;
     }
 
-    private setupNewPolygon() {
-        this.polyTrigger = new Trigger();
-        this.polyTrigger.registerPlayerChatEvent(this.trigPlayer, "-name", false);
-        this.polyTrigger.addAction(() => {
-            let message = GetEventPlayerChatString();
-            let welcomeMessage = "New Polygon being created"
-            sendMessageToPlayer(this.trigPlayer, MapPlayer.fromLocal(), welcomeMessage);
+    public addPoint(p: Point) {
+        this.points.push(p);
+    }
+
+    public addPoints(p: Point[]) {
+        p.forEach(element => {
+            this.points.push(element);
         });
     }
 
-    private setupPolygon() {
+    public delPoint(p: Point) {
+        let length: number = this.points.length;
+        if(length > 1) {
+            let index:number = this.points.indexOf(p);
+            this.points[index] = this.points[this.points.length-1];
+            this.points.pop();
+        } else {
+            this.points = [];
+        }
+    }
+
+    public delPoints(p: Point[]) {
+        let length: number = this.points.length;
+        p.forEach(point => {
+            if(length > 1) {
+                let index:number = this.points.indexOf(p);
+                this.points[index] = this.points[this.points.length-1];
+                this.points.pop();
+                length--;
+            } else {
+                this.points = [];
+            }
+        });
+    }
+
+    public clear() {
+        this.points = [];
+    }
+
+    public destroy(): void {
+        let length: number = Polygon.polygonArray.length;
+        if(length > 1) {
+            let index:number = Polygon.polygonArray.indexOf(this);
+            Polygon.polygonArray[index] = Polygon.polygonArray[Polygon.polygonArray.length-1];
+            Polygon.polygonArray.pop();
+        }
 
     }
 
     //Given three co-linear points p, q, r, the function checks if point q lies on line segment pr
-    public onSegment(segStart: Point, testPt: Point, segEnd: Point): boolean {
+    onSegment(segStart: Point, testPt: Point, segEnd: Point): boolean {
         if(testPt.x <= Math.max(segStart.x, segEnd.x) && testPt.x >= Math.min(segStart.x, segEnd.x) &&
         testPt.y <= Math.max(segStart.y, segEnd.y) && testPt.y >= Math.min(segStart.y, segEnd.y)) {
             return true;
@@ -74,7 +75,7 @@ class Polygon {
     //Returns 0 -> Points are co-linear
     //Returns 1 -> Clockwise
     //Returns 2 -> Counterclockwise
-    public orientation(segStart: Point, testPt: Point, segEnd: Point): Number {
+    orientation(segStart: Point, testPt: Point, segEnd: Point): number {
         let val = (testPt.y - segStart.y) * (segEnd.x - testPt.x) - (testPt.x - segStart.x) * (segEnd.y - testPt.y);
 
         if(val == 0) return 0;
@@ -82,12 +83,12 @@ class Polygon {
     }
 
     //The function that returns true if line segment 'p1q1' and 'p2q2' intersect
-    public doIntersect(p1: Point, q1: Point, p2: Point, q2: Point): boolean {
+    doIntersect(p1: Point, q1: Point, p2: Point, q2: Point): boolean {
         // Find the four orientations needed for general and special cases
-        let o1: Number = this.orientation(p1, q1, p2);
-        let o2: Number = this.orientation(p1, q1, q2);
-        let o3: Number = this.orientation(p2, q2, p1);
-        let o4: Number = this.orientation(p2, q2, q1);
+        let o1: number = this.orientation(p1, q1, p2);
+        let o2: number = this.orientation(p1, q1, q2);
+        let o3: number = this.orientation(p2, q2, p1);
+        let o4: number = this.orientation(p2, q2, q1);
 
         // General case
         if(o1 != o2 && o3 != o4) {
@@ -113,11 +114,11 @@ class Polygon {
     //Checks if a point is inside given Polygon (N > 2 points)
     public isInside(p: Point) {
         // There must be at least 3 vertices
-        let numVertices = this.points.length;
-        if(numVertices) return false;
+        let numVertices: number = this.points.length;
+        if(numVertices < 2) return false;
         let worldBounds = Rectangle.getWorldBounds();
-        let minX = worldBounds.minX();
-        let maxX = worldBounds.maxX();
+        let minX = worldBounds.minX;
+        let maxX = worldBounds.maxX;
 
         //Create a point for line segment from p to infinite
         let extreme: Point = new Point(Infinity, p.y);
@@ -146,24 +147,31 @@ class Polygon {
         return count&1;
     }
 
-}
+    public static count(): number {
+        return Polygon.polygonArray.length;
+    }
 
-function addExistingBases() {
+    public static getArray(): Polygon[] {
+        return Polygon.polygonArray;
+    }
 
-}
-
-function onInit() {
-    Players.forEach(function(value, index) {
-        if(debugMode) {
-            chatTrigger.registerPlayerChatEvent(value, "-newbase", false);
-            chatTrigger.addAction(() => {
-                newPoly: Polygon = new Polygon(true, value);
-            });
-        }
-    });
-    initTrigger.registerPlayerChatEvent()
-    //initTrigger.addAction()
+    public static clearAll() {
+        Polygon.polygonArray = [];
+    }
     
+
 }
 
-//addScriptHook("before:main", hook: scriptHookSignature);
+export function createCircle(center: Point, radius: number): Polygon {
+    let circle = new Polygon([]);
+    let centerX = center.x;
+    let centerY = center.y;
+    let radians: number = Math.PI / circleVertices;
+    for (let index = 0; index < circleVertices; index++) {
+        let pX = center.x + radius * Sin(radians * index);
+        let pY = center.y + radius * Cos(radians * index);
+        const pt: Point = new Point(pX, pY);
+        circle.addPoint(pt);
+    }
+    return circle;
+}

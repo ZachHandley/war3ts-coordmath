@@ -1,7 +1,7 @@
 {
   "name": "war3-coordmath",
   "version": "1.0.0",
-  "description": "Some coordinate math with an included basing system",
+  "description": "Polygons and various methods related to them",
   "author": "Dracaratos",
   "license": "MIT",
   "main": "index.ts",
@@ -27,8 +27,5 @@
     "war3-types": "^1.0.2",
     "war3tstlhelper": "^1.0.1",
     "winston": "^3.2.1"
-  },
-  "dependencies": {
-    "wc3ts-eventqueue": "^1.0.0"
   }
 }
